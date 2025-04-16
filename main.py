@@ -1,26 +1,50 @@
+from datetime import datetime
 from dotenv import load_dotenv
-import os
+from os import getenv
 
 import discord
 from discord.ext import commands
 
 load_dotenv()
 
-# intents = discord.Intents.default()
-# intents.typing = False
-# intents.presences = False
-# intents.message_content = True
+intents = discord.Intents.default()
+intents.message_content = True
 
-# client = discord.Client(intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-@client.event
-async def on_ready() -> None:
-    print(">>bot is online<<")
+@bot.command()
+async def start(ctx: commands.Context[commands.Bot]) -> None:
+    await bot.tree.sync()
+    await ctx.send("Bot started!")
 
 
-token = os.getenv("TOKEN")
+@bot.command()
+async def stop(ctx: commands.Context[commands.Bot]) -> None:
+    await ctx.send("Bot stopped!")
+    await bot.close()
+
+
+@bot.command()
+async def hello(ctx: commands.Context[commands.Bot]) -> None:
+    """Say hello."""
+    await ctx.send("Hello " + ctx.author.mention + "!")
+
+
+@bot.hybrid_command()
+async def time(ctx: commands.Context[commands.Bot]) -> None:
+    """Get the current time."""
+    await ctx.send(f"{datetime.now().strftime("%Y/%m/%d %H:%M:%S")}")
+
+
+@bot.hybrid_command()
+async def say(ctx: commands.Context[commands.Bot], message: str) -> None:
+    """Echo the message."""
+    await ctx.send(message)
+
+
+token = getenv("TOKEN")
 if token is None:
     print("Error: Missing Discord bot token")
 else:
-    client.run(token)
+    bot.run(token)
