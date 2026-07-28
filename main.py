@@ -43,8 +43,8 @@ async def time(ctx: commands.Context[commands.Bot]) -> None:
 @bot.hybrid_command()
 async def say(ctx: commands.Context[commands.Bot], message: str) -> None:
     """Echo the message."""
-    if "阿蘇" in message and "死裝" in message:
-        await ctx.send(f"阿蘇不女裝\n-# <@{getenv("OWNER_ID")}> 有人亂講話")
+    if "阿蘇" in message and "女裝" in message:
+        await ctx.send(f"阿蘇不會女裝的，放棄吧\n-# <@{getenv("OWNER_ID")}> 有人亂講話")
     else:
         await ctx.send(message)
 
