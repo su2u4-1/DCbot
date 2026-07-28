@@ -21,11 +21,20 @@ async def start(ctx: commands.Context[commands.Bot]) -> None:
 
 @bot.command()
 async def stop(ctx: commands.Context[commands.Bot]) -> None:
-    await ctx.send("Bot stopped!")
-    await bot.close()
+    if str(ctx.author.id) == getenv("OWNER_ID"):
+        await ctx.send("Bot stopped!")
+        await bot.close()
+    else:
+        await ctx.send("You are not authorized to stop the bot.")
 
 
 @bot.command()
+async def hello(ctx: commands.Context[commands.Bot]) -> None:
+    """Say hello."""
+    await ctx.send("Hello " + ctx.author.mention + "!")
+
+
+@bot.hybrid_command()
 async def hello(ctx: commands.Context[commands.Bot]) -> None:
     """Say hello."""
     await ctx.send("Hello " + ctx.author.mention + "!")
@@ -40,7 +49,10 @@ async def time(ctx: commands.Context[commands.Bot]) -> None:
 @bot.hybrid_command()
 async def say(ctx: commands.Context[commands.Bot], message: str) -> None:
     """Echo the message."""
-    await ctx.send(message)
+    if "阿蘇" in message and "死裝" in message:
+        await ctx.send(f"阿蘇不女裝\n-# <@{getenv("OWNER_ID")}> 有人亂講話")
+    else:
+        await ctx.send(message)
 
 
 token = getenv("TOKEN")
