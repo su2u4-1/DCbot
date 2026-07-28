@@ -35,12 +35,6 @@ async def hello(ctx: commands.Context[commands.Bot]) -> None:
 
 
 @bot.hybrid_command()
-async def hello(ctx: commands.Context[commands.Bot]) -> None:
-    """Say hello."""
-    await ctx.send("Hello " + ctx.author.mention + "!")
-
-
-@bot.hybrid_command()
 async def time(ctx: commands.Context[commands.Bot]) -> None:
     """Get the current time."""
     await ctx.send(f"{datetime.now().strftime("%Y/%m/%d %H:%M:%S")}")
