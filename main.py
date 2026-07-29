@@ -16,7 +16,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}", flush=True)
-    # 登入成功後自動同步一次斜線指令
     synced = await bot.tree.sync()
     print(f"Synced {len(synced)} command(s)", flush=True)
 
@@ -37,11 +36,16 @@ async def stop(ctx: commands.Context[commands.Bot]) -> None:
     await bot.close()
 
 
-@bot.command()
-async def hello(ctx: commands.Context[commands.Bot]) -> None:
-    print(f"> use hello by {ctx.author.mention}", flush=True)
+# ============================
+
+
+@bot.hybrid_command()
+async def hello(ctx: commands.Context[commands.Bot], user: discord.User | discord.Member | None = None) -> None:
     """Say hello."""
-    await ctx.send("Hello " + ctx.author.mention)
+    print(f"> use hello by {ctx.author.mention}", flush=True)
+    if user is None:
+        user = ctx.author
+    await ctx.send("Hello " + user.mention)
 
 
 @bot.hybrid_command()
