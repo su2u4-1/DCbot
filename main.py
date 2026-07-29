@@ -55,3 +55,5 @@ if token is None:
 else:
     print("bot start")
     bot.run(token)
+
+print("bot stop")
