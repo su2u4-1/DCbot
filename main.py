@@ -15,16 +15,16 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.command()
 async def start(ctx: commands.Context[commands.Bot]) -> None:
-    print("> use start", flush=True)
+    print(f"> use start by {ctx.author.id}", flush=True)
     await bot.tree.sync()
-    await ctx.send("Bot started!")
+    await ctx.send("bot started")
 
 
 @bot.command()
 async def stop(ctx: commands.Context[commands.Bot]) -> None:
-    print("> use stop", flush=True)
+    print(f"> use stop by {ctx.author.id}", flush=True)
     if str(ctx.author.id) == getenv("OWNER_ID"):
-        await ctx.send("Bot stopped!")
+        await ctx.send("bot stopped")
         await bot.close()
     else:
         await ctx.send("You are not authorized to stop the bot.")
@@ -32,21 +32,21 @@ async def stop(ctx: commands.Context[commands.Bot]) -> None:
 
 @bot.command()
 async def hello(ctx: commands.Context[commands.Bot]) -> None:
-    print("> use hello", flush=True)
+    print(f"> use hello by {ctx.author.id}", flush=True)
     """Say hello."""
     await ctx.send("Hello " + ctx.author.mention + "!")
 
 
 @bot.hybrid_command()
 async def time(ctx: commands.Context[commands.Bot]) -> None:
-    print("> use time", flush=True)
+    print(f"> use time by {ctx.author.id}", flush=True)
     """Get the current time."""
     await ctx.send(f"{datetime.now().strftime("%Y/%m/%d %H:%M:%S")}")
 
 
 @bot.hybrid_command()
 async def say(ctx: commands.Context[commands.Bot], message: str) -> None:
-    print("> use say", flush=True)
+    print(f"> use say by {ctx.author.id}", flush=True)
     """Echo the message."""
     if "阿蘇" in message and "女裝" in message:
         await ctx.send(f"阿蘇不會女裝的，放棄吧\n-# <@{getenv("OWNER_ID")}> 有人亂講話")
