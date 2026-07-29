@@ -30,12 +30,12 @@ def get_time() -> str:
 
 @bot.event
 async def on_message(message: discord.Message) -> None:
-    print(f"[{get_time()}] on_message by {message.author.mention}: {message.content}", flush=True)
     if not isinstance(bot.user, discord.ClientUser):
         return
     if message.author == bot.user:
         return
     if bot.user in message.mentions:
+        print(f"[{get_time()}] mention by {message.author.mention}: {message.content}", flush=True)
         user_prompt = message.content.replace(f"<@{bot.user.id}>", "").replace(f"<@!{bot.user.id}>", "").strip()
 
         if not user_prompt:
@@ -44,7 +44,7 @@ async def on_message(message: discord.Message) -> None:
 
         async with message.channel.typing():
             try:
-                print(f"[{get_time()}]: {user_prompt}", flush=True)
+                print(f"[{get_time()}] {message.author.mention}: {user_prompt}", flush=True)
                 response = client_ai.chat.completions.create(
                     model="openrouter/free",
                     messages=[
@@ -57,7 +57,7 @@ async def on_message(message: discord.Message) -> None:
                 )
 
                 ai_reply = response.choices[0].message.content
-                print(f"[{get_time()}] AI : {ai_reply}", flush=True)
+                print(f"[{get_time()}] AI: {ai_reply}", flush=True)
 
                 await message.reply(ai_reply)
 
