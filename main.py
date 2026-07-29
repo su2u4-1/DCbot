@@ -1,6 +1,9 @@
+from collections import defaultdict, deque
+from collections.abc import Sequence
 from datetime import datetime
 from dotenv import load_dotenv
 from os import getenv
+from typing import TypedDict
 
 import discord
 from discord.ext import commands
@@ -15,6 +18,34 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+class ChatMessage(TypedDict):
+    role: str
+    content: str
+
+
+def get_context_turns() -> int:
+    value = getenv("CONTEXT_TURNS", "10")
+    try:
+        return max(0, int(value))
+    except ValueError:
+        return 10
+
+
+CONTEXT_TURNS = get_context_turns()
+conversation_history: defaultdict[int, deque[ChatMessage]] = defaultdict(
+    lambda: deque(maxlen=max(1, CONTEXT_TURNS * 2))
+)
+
+
+def build_chat_messages(history: Sequence[ChatMessage], user_prompt: str) -> list[ChatMessage]:
+    recent_history = list(history[-CONTEXT_TURNS * 2 :]) if CONTEXT_TURNS else []
+    return [
+        {"role": "system", "content": getenv("PROMPT", "")},
+        *recent_history,
+        {"role": "user", "content": user_prompt},
+    ]
 
 
 def get_time() -> str:
@@ -45,12 +76,20 @@ async def on_message(message: discord.Message) -> None:
         async with message.channel.typing():
             try:
                 print(f"[{get_time()}] {message.author.mention}: {user_prompt}", flush=True)
+                history = conversation_history[message.channel.id]
                 response = await client_ai.chat.completions.create(
                     model="openrouter/free",
-                    messages=[{"role": "system", "content": str(getenv("PROMPT"))}, {"role": "user", "content": user_prompt}],
+                    messages=build_chat_messages(list(history), user_prompt),
                 )
 
                 ai_reply = response.choices[0].message.content
+                if CONTEXT_TURNS and ai_reply:
+                    history.extend(
+                        (
+                            {"role": "user", "content": user_prompt},
+                            {"role": "assistant", "content": ai_reply},
+                        )
+                    )
                 print(f"[{get_time()}] AI: {ai_reply}", flush=True)
 
                 await message.reply(ai_reply)
@@ -115,11 +154,15 @@ async def say(ctx: commands.Context[commands.Bot], message: str) -> None:
         await ctx.send(message)
 
 
-token = getenv("TOKEN")
-if token is None:
-    print("Error: Missing Discord bot token", flush=True)
-else:
+def main() -> None:
+    token = getenv("TOKEN")
+    if token is None:
+        print("Error: Missing Discord bot token", flush=True)
+        return
     print("bot start", flush=True)
     bot.run(token)
+    print("bot stop", flush=True)
 
-print("bot stop", flush=True)
+
+if __name__ == "__main__":
+    main()
