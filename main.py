@@ -15,14 +15,14 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.command()
 async def start(ctx: commands.Context[commands.Bot]) -> None:
-    print("> use start")
+    print("> use start", flush=True)
     await bot.tree.sync()
     await ctx.send("Bot started!")
 
 
 @bot.command()
 async def stop(ctx: commands.Context[commands.Bot]) -> None:
-    print("> use stop")
+    print("> use stop", flush=True)
     if str(ctx.author.id) == getenv("OWNER_ID"):
         await ctx.send("Bot stopped!")
         await bot.close()
@@ -32,21 +32,21 @@ async def stop(ctx: commands.Context[commands.Bot]) -> None:
 
 @bot.command()
 async def hello(ctx: commands.Context[commands.Bot]) -> None:
-    print("> use hello")
+    print("> use hello", flush=True)
     """Say hello."""
     await ctx.send("Hello " + ctx.author.mention + "!")
 
 
 @bot.hybrid_command()
 async def time(ctx: commands.Context[commands.Bot]) -> None:
-    print("> use time")
+    print("> use time", flush=True)
     """Get the current time."""
     await ctx.send(f"{datetime.now().strftime("%Y/%m/%d %H:%M:%S")}")
 
 
 @bot.hybrid_command()
 async def say(ctx: commands.Context[commands.Bot], message: str) -> None:
-    print("> use say")
+    print("> use say", flush=True)
     """Echo the message."""
     if "阿蘇" in message and "女裝" in message:
         await ctx.send(f"阿蘇不會女裝的，放棄吧\n-# <@{getenv("OWNER_ID")}> 有人亂講話")
@@ -56,9 +56,9 @@ async def say(ctx: commands.Context[commands.Bot], message: str) -> None:
 
 token = getenv("TOKEN")
 if token is None:
-    print("Error: Missing Discord bot token")
+    print("Error: Missing Discord bot token", flush=True)
 else:
-    print("bot start")
+    print("bot start", flush=True)
     bot.run(token)
 
-print("bot stop")
+print("bot stop", flush=True)
