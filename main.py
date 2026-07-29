@@ -32,8 +32,10 @@ def get_time() -> str:
 async def on_message(message: discord.Message) -> None:
     print(f"[{get_time()}] on_message by {message.author.mention}: {message.content}", flush=True)
     if not isinstance(bot.user, discord.User):
+        print(f"[{get_time()}]: [-1]", flush=True)
         return
     if message.author == bot.user:
+        print(f"[{get_time()}]: [-2]", flush=True)
         return
     print(f"[{get_time()} 1]: {message.content}", flush=True)
     if bot.user in message.mentions:
