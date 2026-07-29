@@ -1,4 +1,5 @@
-from collections import defaultdict, deque
+import asyncio
+from collections import OrderedDict, deque
 from collections.abc import Sequence
 from datetime import datetime
 from dotenv import load_dotenv
@@ -28,8 +29,48 @@ def get_context_turns() -> int:
         return 10
 
 
+def get_context_channel_limit() -> int:
+    value = getenv("CONTEXT_CHANNEL_LIMIT", "1000")
+    try:
+        return max(1, int(value))
+    except ValueError:
+        return 1000
+
+
 CONTEXT_TURNS = get_context_turns()
-conversation_history: defaultdict[int, deque[ChatCompletionMessageParam]] = defaultdict(lambda: deque(maxlen=max(1, CONTEXT_TURNS * 2)))
+CONTEXT_CHANNEL_LIMIT = get_context_channel_limit()
+
+
+class ChannelContext:
+    __slots__ = ("history", "lock")
+
+    def __init__(self) -> None:
+        self.history: deque[ChatCompletionMessageParam] = deque(maxlen=max(1, CONTEXT_TURNS * 2))
+        self.lock = asyncio.Lock()
+
+
+conversation_contexts: OrderedDict[int, ChannelContext] = OrderedDict()
+
+
+def prune_channel_contexts(protected_channel_id: int | None = None) -> None:
+    while len(conversation_contexts) > CONTEXT_CHANNEL_LIMIT:
+        for channel_id, context in conversation_contexts.items():
+            if channel_id != protected_channel_id and not context.lock.locked():
+                del conversation_contexts[channel_id]
+                break
+        else:
+            return
+
+
+def get_channel_context(channel_id: int) -> ChannelContext:
+    context = conversation_contexts.get(channel_id)
+    if context is None:
+        context = ChannelContext()
+        conversation_contexts[channel_id] = context
+    else:
+        conversation_contexts.move_to_end(channel_id)
+    prune_channel_contexts(protected_channel_id=channel_id)
+    return context
 
 
 def build_chat_messages(history: Sequence[ChatCompletionMessageParam], user_prompt: str) -> list[ChatCompletionMessageParam]:
@@ -66,37 +107,43 @@ async def on_message(message: discord.Message) -> None:
             await message.channel.send(f"你好 {message.author.mention}！有什麼我可以幫忙的嗎？")
             return
 
-        async with message.channel.typing():
-            try:
-                print(f"[{get_time()}] {message.author.mention}: {user_prompt}", flush=True)
-                history = conversation_history[message.channel.id]
-                response = await client_ai.chat.completions.create(
-                    model="openrouter/free",
-                    messages=build_chat_messages(list(history), user_prompt),
-                )
-
-                ai_reply = response.choices[0].message.content
-                if CONTEXT_TURNS and ai_reply:
-                    history.extend(
-                        (
-                            {"role": "user", "content": user_prompt},
-                            {"role": "assistant", "content": ai_reply},
+        context = get_channel_context(message.channel.id)
+        try:
+            async with context.lock:
+                async with message.channel.typing():
+                    try:
+                        print(f"[{get_time()}] {message.author.mention}: {user_prompt}", flush=True)
+                        response = await client_ai.chat.completions.create(
+                            model="openrouter/free",
+                            messages=build_chat_messages(context.history, user_prompt),
                         )
-                    )
-                print(f"[{get_time()}] AI: {ai_reply}", flush=True)
 
-                await message.reply(ai_reply)
+                        ai_reply = response.choices[0].message.content
+                        if not ai_reply:
+                            raise ValueError("OpenRouter returned an empty reply")
+                        print(f"[{get_time()}] AI: {ai_reply}", flush=True)
 
-            except openai.RateLimitError as e:
-                if e.status_code == 429:
-                    print(f"OpenRouter API call rate limit error: {e}", flush=True)
-                    await message.reply("⚠️ AI 目前今日免費額度已用完，請明天再試。")
-                else:
-                    print(f"OpenRouter API call error: {e}", flush=True)
-                    await message.reply("⚠️ 呼叫 AI 服務時發生錯誤，請稍後再試。")
-            except Exception as e:
-                print(f"OpenRouter API call error: {e}")
-                await message.reply("⚠️ 抱歉，處理你的請求時發生錯誤，請稍後再試。")
+                        await message.reply(ai_reply)
+                        if CONTEXT_TURNS:
+                            context.history.extend(
+                                (
+                                    {"role": "user", "content": user_prompt},
+                                    {"role": "assistant", "content": ai_reply},
+                                )
+                            )
+
+                    except openai.RateLimitError as e:
+                        if e.status_code == 429:
+                            print(f"OpenRouter API call rate limit error: {e}", flush=True)
+                            await message.reply("⚠️ AI 目前今日免費額度已用完，請明天再試。")
+                        else:
+                            print(f"OpenRouter API call error: {e}", flush=True)
+                            await message.reply("⚠️ 呼叫 AI 服務時發生錯誤，請稍後再試。")
+                    except Exception as e:
+                        print(f"OpenRouter API call error: {e}")
+                        await message.reply("⚠️ 抱歉，處理你的請求時發生錯誤，請稍後再試。")
+        finally:
+            prune_channel_contexts()
 
 
 # ============================
@@ -125,9 +172,8 @@ async def stop(ctx: commands.Context[commands.Bot]) -> None:
 async def hello(ctx: commands.Context[commands.Bot], user: discord.User | discord.Member | None = None) -> None:
     """Say hello."""
     print(f"[{get_time()}] use hello by {ctx.author.mention}: {"None" if user is None else user.id}", flush=True)
-    if user is None:
-        user = ctx.author
-    await ctx.send("Hello " + user.mention)
+    mention = ctx.author.mention if user is None else user.mention
+    await ctx.send("Hello " + mention)
 
 
 @bot.hybrid_command()
