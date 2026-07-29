@@ -4,4 +4,3 @@
 
 ## .env需要的值:
 - TOKEN
-- OWNER_ID
