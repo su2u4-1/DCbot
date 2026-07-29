@@ -9,7 +9,7 @@ import openai
 
 load_dotenv()
 
-client_ai = openai.OpenAI(base_url="https://openrouter.ai/api/v1", api_key=getenv("KEY"))
+client_ai = openai.AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=getenv("KEY"))
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -45,15 +45,9 @@ async def on_message(message: discord.Message) -> None:
         async with message.channel.typing():
             try:
                 print(f"[{get_time()}] {message.author.mention}: {user_prompt}", flush=True)
-                response = client_ai.chat.completions.create(
+                response = await client_ai.chat.completions.create(
                     model="openrouter/free",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "你是一個很智障的 Discord AI 助手。",
-                        },
-                        {"role": "user", "content": user_prompt},
-                    ],
+                    messages=[{"role": "system", "content": str(getenv("PROMPT"))}, {"role": "user", "content": user_prompt}],
                 )
 
                 ai_reply = response.choices[0].message.content
