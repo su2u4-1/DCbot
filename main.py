@@ -38,17 +38,14 @@ async def on_message(message: discord.Message) -> None:
     if bot.user in message.mentions:
         user_prompt = message.content.replace(f"<@{bot.user.id}>", "").replace(f"<@!{bot.user.id}>", "").strip()
 
-        # 如果使用者只有 @ 機器人但沒有輸入任何文字
         if not user_prompt:
             await message.channel.send(f"你好 {message.author.mention}！有什麼我可以幫忙的嗎？")
             return
 
-        # 觸發正在輸入中的提示(Typing Indicator)
         async with message.channel.typing():
             try:
-                # 呼叫 OpenRouter API
+                print(f"[{get_time()}]: {user_prompt}", flush=True)
                 response = client_ai.chat.completions.create(
-                    # 可選擇免費模型如 "openrouter/free" 或 "google/gemini-2.5-flash"
                     model="openrouter/free",
                     messages=[
                         {
@@ -59,14 +56,13 @@ async def on_message(message: discord.Message) -> None:
                     ],
                 )
 
-                # 取得 AI 回覆的文字
                 ai_reply = response.choices[0].message.content
+                print(f"[{get_time()}] AI : {ai_reply}", flush=True)
 
-                # 回覆訊息並標記該使用者
                 await message.reply(ai_reply)
 
             except Exception as e:
-                print(f"OpenRouter API 呼叫失敗: {e}")
+                print(f"OpenRouter API call error: {e}")
                 await message.reply("抱歉，處理你的請求時發生錯誤，請稍後再試！")
 
 
