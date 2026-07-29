@@ -35,16 +35,19 @@ async def on_message(message: discord.Message) -> None:
         return
     if message.author == bot.user:
         return
+    print(f"[{get_time()} 1]: {message.content}", flush=True)
     if bot.user in message.mentions:
         user_prompt = message.content.replace(f"<@{bot.user.id}>", "").replace(f"<@!{bot.user.id}>", "").strip()
+        print(f"[{get_time()} 2]: {user_prompt}", flush=True)
 
         if not user_prompt:
+            print(f"[{get_time()} 3]: {user_prompt}", flush=True)
             await message.channel.send(f"你好 {message.author.mention}！有什麼我可以幫忙的嗎？")
             return
 
         async with message.channel.typing():
             try:
-                print(f"[{get_time()}]: {user_prompt}", flush=True)
+                print(f"[{get_time()} 4]: {user_prompt}", flush=True)
                 response = client_ai.chat.completions.create(
                     model="openrouter/free",
                     messages=[
