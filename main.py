@@ -55,6 +55,13 @@ async def on_message(message: discord.Message) -> None:
 
                 await message.reply(ai_reply)
 
+            except openai.RateLimitError as e:
+                if e.status_code == 429:
+                    print(f"OpenRouter API call rate limit error: {e}", flush=True)
+                    await message.reply("⚠️ AI 目前今日免費額度已用完，請明天再試或聯繫管理員升級額度！")
+                else:
+                    print(f"OpenRouter API call error: {e}", flush=True)
+                    await message.reply("⚠️ 呼叫 AI 服務時發生錯誤，請稍後再試。")
             except Exception as e:
                 print(f"OpenRouter API call error: {e}")
                 await message.reply("抱歉，處理你的請求時發生錯誤，請稍後再試！")
