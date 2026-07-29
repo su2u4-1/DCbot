@@ -15,7 +15,8 @@ if "%1"=="log" (
 
 if "%1"=="restart" (
     :: 單次 SSH 連線：將 .env 串流傳送至遠端，並依序執行 git pull 與 restart
-    tar -cf - .env | ssh %REMOTE% "tar -xf - -C /home/su2u4/DCbot/ && cd /home/su2u4/DCbot && git pull && %REMOTE_SCRIPT% restart < /dev/null"
+    tar -cf - .env | ssh %REMOTE% "tar -xf - -C /home/su2u4/DCbot/ && cd /home/su2u4/DCbot && git pull"
+    ssh %REMOTE% "%REMOTE_SCRIPT% restart < /dev/null"
     exit /b 0
 )
 
