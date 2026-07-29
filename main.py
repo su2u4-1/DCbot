@@ -1,6 +1,6 @@
 import asyncio
 from collections import OrderedDict, deque
-from collections.abc import Sequence
+from collections.abc import Iterable
 from datetime import datetime
 from dotenv import load_dotenv
 from os import getenv
@@ -42,9 +42,10 @@ CONTEXT_CHANNEL_LIMIT = get_context_channel_limit()
 
 
 class ChannelContext:
-    __slots__ = ("history", "lock")
+    __slots__ = ("active_requests", "history", "lock")
 
     def __init__(self) -> None:
+        self.active_requests = 0
         self.history: deque[ChatCompletionMessageParam] = deque(maxlen=max(1, CONTEXT_TURNS * 2))
         self.lock = asyncio.Lock()
 
@@ -52,29 +53,35 @@ class ChannelContext:
 conversation_contexts: OrderedDict[int, ChannelContext] = OrderedDict()
 
 
-def prune_channel_contexts(protected_channel_id: int | None = None) -> None:
+def prune_channel_contexts() -> None:
     while len(conversation_contexts) > CONTEXT_CHANNEL_LIMIT:
         for channel_id, context in conversation_contexts.items():
-            if channel_id != protected_channel_id and not context.lock.locked():
+            if context.active_requests == 0:
                 del conversation_contexts[channel_id]
                 break
         else:
             return
 
 
-def get_channel_context(channel_id: int) -> ChannelContext:
+def acquire_channel_context(channel_id: int) -> ChannelContext:
     context = conversation_contexts.get(channel_id)
     if context is None:
         context = ChannelContext()
         conversation_contexts[channel_id] = context
     else:
         conversation_contexts.move_to_end(channel_id)
-    prune_channel_contexts(protected_channel_id=channel_id)
+    context.active_requests += 1
+    prune_channel_contexts()
     return context
 
 
-def build_chat_messages(history: Sequence[ChatCompletionMessageParam], user_prompt: str) -> list[ChatCompletionMessageParam]:
-    recent_history = list(history[-CONTEXT_TURNS * 2 :]) if CONTEXT_TURNS else []
+def release_channel_context(context: ChannelContext) -> None:
+    context.active_requests -= 1
+    prune_channel_contexts()
+
+
+def build_chat_messages(history: Iterable[ChatCompletionMessageParam], user_prompt: str) -> list[ChatCompletionMessageParam]:
+    recent_history = list(history)[-CONTEXT_TURNS * 2 :] if CONTEXT_TURNS else []
     return [
         {"role": "system", "content": getenv("PROMPT", "")},
         *recent_history,
@@ -107,7 +114,7 @@ async def on_message(message: discord.Message) -> None:
             await message.channel.send(f"你好 {message.author.mention}！有什麼我可以幫忙的嗎？")
             return
 
-        context = get_channel_context(message.channel.id)
+        context = acquire_channel_context(message.channel.id)
         try:
             async with context.lock:
                 async with message.channel.typing():
@@ -143,7 +150,7 @@ async def on_message(message: discord.Message) -> None:
                         print(f"OpenRouter API call error: {e}")
                         await message.reply("⚠️ 抱歉，處理你的請求時發生錯誤，請稍後再試。")
         finally:
-            prune_channel_contexts()
+            release_channel_context(context)
 
 
 # ============================
