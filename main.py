@@ -17,15 +17,20 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-@bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user}", flush=True)
-    synced = await bot.tree.sync()
-    print(f"Synced {len(synced)} command(s)", flush=True)
+def get_time() -> str:
+    return datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+
+
+# @bot.event
+# async def on_ready():
+#     print(f"Logged in as {bot.user}", flush=True)
+#     synced = await bot.tree.sync()
+#     print(f"Synced {len(synced)} command(s)", flush=True)
 
 
 @bot.event
 async def on_message(message: discord.Message) -> None:
+    print(f"[{get_time()}] on_message by {message.author.mention}: {message.content}", flush=True)
     if not isinstance(bot.user, discord.User):
         return
     if message.author == bot.user:
@@ -71,7 +76,7 @@ async def on_message(message: discord.Message) -> None:
 @bot.command()
 @commands.is_owner()
 async def start(ctx: commands.Context[commands.Bot]) -> None:
-    print(f"> use start by owner {ctx.author}", flush=True)
+    print(f"[{get_time()}] use start by owner {ctx.author}", flush=True)
     synced = await bot.tree.sync()
     await ctx.send(f"Bot ready. Synced {len(synced)} command(s).")
 
@@ -79,7 +84,7 @@ async def start(ctx: commands.Context[commands.Bot]) -> None:
 @bot.command()
 @commands.is_owner()
 async def stop(ctx: commands.Context[commands.Bot]) -> None:
-    print(f"> use stop by owner {ctx.author.mention}", flush=True)
+    print(f"[{get_time()}] use stop by owner {ctx.author.mention}", flush=True)
     await ctx.send("bot stopped")
     await bot.close()
 
@@ -90,7 +95,7 @@ async def stop(ctx: commands.Context[commands.Bot]) -> None:
 @bot.hybrid_command()
 async def hello(ctx: commands.Context[commands.Bot], user: discord.User | discord.Member | None = None) -> None:
     """Say hello."""
-    print(f"> use hello by {ctx.author.mention}", flush=True)
+    print(f"[{get_time()}] use hello by {ctx.author.mention}: {"None" if user is None else user.id}", flush=True)
     if user is None:
         user = ctx.author
     await ctx.send("Hello " + user.mention)
@@ -98,14 +103,14 @@ async def hello(ctx: commands.Context[commands.Bot], user: discord.User | discor
 
 @bot.hybrid_command()
 async def time(ctx: commands.Context[commands.Bot]) -> None:
-    print(f"> use time by {ctx.author.mention}", flush=True)
+    print(f"[{get_time()}] use time by {ctx.author.mention}", flush=True)
     """Get the current time."""
-    await ctx.send(f"{datetime.now().strftime("%Y/%m/%d %H:%M:%S")}")
+    await ctx.send(f"{get_time()}")
 
 
 @bot.hybrid_command()
 async def say(ctx: commands.Context[commands.Bot], message: str) -> None:
-    print(f"> use say by {ctx.author.mention}", flush=True)
+    print(f"[{get_time()}] use say by {ctx.author.mention}: {message}", flush=True)
     """Echo the message."""
     if "阿蘇" in message and "女裝" in message:
         await ctx.send(f"阿蘇不會女裝的，放棄吧\n-# <@{getenv("OWNER_ID")}> 有人亂講話")
