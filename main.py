@@ -3,12 +3,12 @@ from collections.abc import Sequence
 from datetime import datetime
 from dotenv import load_dotenv
 from os import getenv
-from typing import TypedDict
 
 import discord
 from discord.ext import commands
 
 import openai
+from openai.types.chat import ChatCompletionMessageParam
 
 load_dotenv()
 
@@ -20,11 +20,6 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-class ChatMessage(TypedDict):
-    role: str
-    content: str
-
-
 def get_context_turns() -> int:
     value = getenv("CONTEXT_TURNS", "10")
     try:
@@ -34,12 +29,10 @@ def get_context_turns() -> int:
 
 
 CONTEXT_TURNS = get_context_turns()
-conversation_history: defaultdict[int, deque[ChatMessage]] = defaultdict(
-    lambda: deque(maxlen=max(1, CONTEXT_TURNS * 2))
-)
+conversation_history: defaultdict[int, deque[ChatCompletionMessageParam]] = defaultdict(lambda: deque(maxlen=max(1, CONTEXT_TURNS * 2)))
 
 
-def build_chat_messages(history: Sequence[ChatMessage], user_prompt: str) -> list[ChatMessage]:
+def build_chat_messages(history: Sequence[ChatCompletionMessageParam], user_prompt: str) -> list[ChatCompletionMessageParam]:
     recent_history = list(history[-CONTEXT_TURNS * 2 :]) if CONTEXT_TURNS else []
     return [
         {"role": "system", "content": getenv("PROMPT", "")},
