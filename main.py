@@ -53,4 +53,5 @@ token = getenv("TOKEN")
 if token is None:
     print("Error: Missing Discord bot token")
 else:
+    print("bot start")
     bot.run(token)
