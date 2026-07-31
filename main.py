@@ -157,19 +157,19 @@ async def on_message(message: discord.Message) -> None:
 
 
 @bot.command()
-@commands.is_owner()
 async def start(ctx: commands.Context[commands.Bot]) -> None:
-    print(f"[{get_time()}] use start by owner {ctx.author}", flush=True)
-    synced = await bot.tree.sync()
-    await ctx.send(f"Bot ready. Synced {len(synced)} command(s).")
+    if str(ctx.author.id) == getenv("OWNER_ID"):
+        print(f"[{get_time()}] use start by owner {ctx.author}", flush=True)
+        synced = await bot.tree.sync()
+        await ctx.send(f"Bot ready. Synced {len(synced)} command(s).")
 
 
 @bot.command()
-@commands.is_owner()
 async def stop(ctx: commands.Context[commands.Bot]) -> None:
-    print(f"[{get_time()}] use stop by owner {ctx.author.mention}", flush=True)
-    await ctx.send("bot stopped")
-    await bot.close()
+    if str(ctx.author.id) == getenv("OWNER_ID"):
+        print(f"[{get_time()}] use stop by owner {ctx.author}", flush=True)
+        await ctx.send("bot stopped")
+        await bot.close()
 
 
 # ============================
