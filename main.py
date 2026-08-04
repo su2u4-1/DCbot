@@ -1,156 +1,102 @@
-import asyncio
-from collections import OrderedDict, deque
-from collections.abc import Iterable
 from datetime import datetime
-from dotenv import load_dotenv
-from os import getenv
-
-import discord
 from discord.ext import commands
-
-import openai
+from dotenv import load_dotenv
 from openai.types.chat import ChatCompletionMessageParam
+from os import getenv, makedirs
+from os.path import join, splitext
+from typing import Optional
+import aiohttp
+import discord
+import openai
 
 load_dotenv()
-
 client_ai = openai.AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=getenv("KEY"))
-
 intents = discord.Intents.default()
 intents.message_content = True
-
 bot = commands.Bot(command_prefix="!", intents=intents)
-
-
-def get_context_turns() -> int:
-    value = getenv("CONTEXT_TURNS", "10")
-    try:
-        return max(0, int(value))
-    except ValueError:
-        return 10
-
-
-def get_context_channel_limit() -> int:
-    value = getenv("CONTEXT_CHANNEL_LIMIT", "1000")
-    try:
-        return max(1, int(value))
-    except ValueError:
-        return 1000
-
-
-CONTEXT_TURNS = get_context_turns()
-CONTEXT_CHANNEL_LIMIT = get_context_channel_limit()
-
-
-class ChannelContext:
-    __slots__ = ("active_requests", "history", "lock")
-
-    def __init__(self) -> None:
-        self.active_requests = 0
-        self.history: deque[ChatCompletionMessageParam] = deque(maxlen=max(1, CONTEXT_TURNS * 2))
-        self.lock = asyncio.Lock()
-
-
-conversation_contexts: OrderedDict[int, ChannelContext] = OrderedDict()
-
-
-def prune_channel_contexts() -> None:
-    while len(conversation_contexts) > CONTEXT_CHANNEL_LIMIT:
-        for channel_id, context in conversation_contexts.items():
-            if context.active_requests == 0:
-                del conversation_contexts[channel_id]
-                break
-        else:
-            return
-
-
-def acquire_channel_context(channel_id: int) -> ChannelContext:
-    context = conversation_contexts.get(channel_id)
-    if context is None:
-        context = ChannelContext()
-        conversation_contexts[channel_id] = context
-    else:
-        conversation_contexts.move_to_end(channel_id)
-    context.active_requests += 1
-    prune_channel_contexts()
-    return context
-
-
-def release_channel_context(context: ChannelContext) -> None:
-    context.active_requests -= 1
-    prune_channel_contexts()
-
-
-def build_chat_messages(history: Iterable[ChatCompletionMessageParam], user_prompt: str) -> list[ChatCompletionMessageParam]:
-    recent_history = list(history)[-CONTEXT_TURNS * 2 :] if CONTEXT_TURNS else []
-    return [
-        {"role": "system", "content": getenv("PROMPT", "")},
-        *recent_history,
-        {"role": "user", "content": user_prompt},
-    ]
-
-
-def get_time() -> str:
-    return datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-
-
-# @bot.event
-# async def on_ready():
-#     print(f"Logged in as {bot.user}", flush=True)
-#     synced = await bot.tree.sync()
-#     print(f"Synced {len(synced)} command(s)", flush=True)
 
 
 @bot.event
 async def on_message(message: discord.Message) -> None:
     if not isinstance(bot.user, discord.ClientUser):
         return
-    if message.author == bot.user:
+    # 忽略所有 Bot 發送的訊息（包含自己）
+    if message.author.bot:
         return
-    if bot.user in message.mentions:
-        print(f"[{get_time()}] mention by {message.author.mention}: {message.content}", flush=True)
-        user_prompt = message.content.replace(f"<@{bot.user.id}>", "").replace(f"<@!{bot.user.id}>", "").strip()
 
-        if not user_prompt:
-            await message.channel.send(f"你好 {message.author.mention}！有什麼我可以幫忙的嗎？")
+    # 判斷是否為「回覆 Bot 的訊息」
+    is_reply_to_bot = False
+    if message.reference and message.reference.message_id:
+        try:
+            ref_msg = await message.channel.fetch_message(message.reference.message_id)
+            if ref_msg.author == bot.user:
+                is_reply_to_bot = True
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+
+    # 觸發條件：被 Mention 或是 回覆 Bot 的訊息
+    if bot.user in message.mentions or is_reply_to_bot:
+        print(f"[{get_time()}] Triggered by {message.author}: {message.content}", flush=True)
+        if message.guild and message.guild.me:
+            bot_nick = message.guild.me.display_name
+        else:
+            bot_nick = bot.user.display_name if bot.user else "Bot"
+
+        # 整理使用者輸入內容（去除 Mention 標籤）
+        user_prompt = message.content.replace(f"<@{bot.user.id}>", f"@{bot_nick}").replace(f"<@!{bot.user.id}>", f"@{bot_nick}").strip()
+
+        # 如果只有 Mention 但沒有輸入任何文字（且不是回覆鏈的一環）
+        if not user_prompt and not message.reference:
+            await message.reply(f"你好 {message.author.mention}！有什麼我可以幫忙的嗎？")
             return
 
-        context = acquire_channel_context(message.channel.id)
-        try:
-            async with context.lock:
-                async with message.channel.typing():
-                    try:
-                        print(f"[{get_time()}] {message.author.mention}: {user_prompt}", flush=True)
-                        response = await client_ai.chat.completions.create(
-                            model="openrouter/free",
-                            messages=build_chat_messages(context.history, user_prompt),
-                        )
+        async with message.channel.typing():
+            try:
+                chain: list[discord.Message] = []
+                curr: Optional[discord.Message] = message
 
-                        ai_reply = response.choices[0].message.content
-                        if not ai_reply:
-                            raise ValueError("OpenRouter returned an empty reply")
-                        print(f"[{get_time()}] AI: {ai_reply}", flush=True)
+                while curr:
+                    chain.append(curr)
+                    if curr.reference and curr.reference.message_id:
+                        try:
+                            curr = await curr.channel.fetch_message(curr.reference.message_id)
+                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                            curr = None
+                    else:
+                        curr = None
 
-                        await message.reply(ai_reply)
-                        if CONTEXT_TURNS:
-                            context.history.extend(
-                                (
-                                    {"role": "user", "content": user_prompt},
-                                    {"role": "assistant", "content": ai_reply},
-                                )
-                            )
+                chain.reverse()
 
-                    except openai.RateLimitError as e:
-                        if e.status_code == 429:
-                            print(f"OpenRouter API call rate limit error: {e}", flush=True)
-                            await message.reply("⚠️ AI 目前今日免費額度已用完，請明天再試。")
-                        else:
-                            print(f"OpenRouter API call error: {e}", flush=True)
-                            await message.reply("⚠️ 呼叫 AI 服務時發生錯誤，請稍後再試。")
-                    except Exception as e:
-                        print(f"OpenRouter API call error: {e}")
-                        await message.reply("⚠️ 抱歉，處理你的請求時發生錯誤，請稍後再試。")
-        finally:
-            release_channel_context(context)
+                history: list[ChatCompletionMessageParam] = [{"role": "system", "content": str(getenv("PROMPT")) + f"你的暱稱是: `{bot_nick}`"}]
+                for msg in chain:
+                    clean_content = msg.content.replace(f"<@{message.guild.me.id if message.guild else ''}>", f"@{bot_nick}").strip()
+                    if msg.author.bot:
+                        history.append({"role": "assistant", "content": clean_content})
+                    else:
+                        history.append({"role": "user", "content": clean_content})
+
+                response = await client_ai.chat.completions.create(model="openrouter/free", messages=history)
+                ai_reply = response.choices[0].message.content
+                if not ai_reply:
+                    raise ValueError("OpenRouter returned an empty reply")
+
+                print(f"[{get_time()}] AI: {ai_reply}", flush=True)
+
+                await message.reply(ai_reply)
+
+            except openai.RateLimitError as e:
+                if e.status_code == 429:
+                    print(f"OpenRouter API call rate limit error: {e}", flush=True)
+                    await message.reply("⚠️ AI 目前今日免費額度已用完，請明天再試。")
+                else:
+                    print(f"OpenRouter API call error: {e}", flush=True)
+                    await message.reply("⚠️ 呼叫 AI 服務時發生錯誤，請稍後再試。")
+            except Exception as e:
+                print(f"OpenRouter API call error: {e}", flush=True)
+                await message.reply("⚠️ 抱歉，處理你的請求時發生錯誤，請稍後再試。")
+
+    # 確保其他 bot 命令 (!command) 仍可正常運作
+    await bot.process_commands(message)
 
 
 # ============================
@@ -173,6 +119,10 @@ async def stop(ctx: commands.Context[commands.Bot]) -> None:
 
 
 # ============================
+
+
+def get_time() -> str:
+    return datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
 
 @bot.hybrid_command()
@@ -198,6 +148,39 @@ async def say(ctx: commands.Context[commands.Bot], message: str) -> None:
         await ctx.send(f"阿蘇不會女裝的，放棄吧\n-# <@{getenv("OWNER_ID")}> 有人亂講話")
     else:
         await ctx.send(message)
+
+
+@bot.hybrid_command()
+async def archive_channel(ctx: commands.Context[commands.Bot]) -> None:
+    folder_name: str = f"archive_{ctx.channel.id}"
+    media_dir: str = join(folder_name, "media")
+    makedirs(media_dir, exist_ok=True)
+    log_file_path: str = join(folder_name, "messages.txt")
+
+    await ctx.send("開始讀取頻道歷史訊息並備份...")
+
+    async with aiohttp.ClientSession() as session:
+        with open(log_file_path, "w", encoding="utf-8") as f:
+            async for msg in ctx.channel.history(limit=None, oldest_first=True):
+                f.write(f"[{msg.created_at}] {msg.author} ({msg.author.id}): {msg.content}\n")
+
+                for index, attachment in enumerate(msg.attachments):
+                    f.write(f"  [附件] {attachment.filename} ({attachment.url})\n")
+
+                    ext: str = splitext(attachment.filename)[1]
+                    safe_filename: str = f"{msg.id}_{index}{ext}"
+                    file_path: str = join(media_dir, safe_filename)
+
+                    try:
+                        async with session.get(attachment.url) as resp:
+                            if resp.status == 200:
+                                data: bytes = await resp.read()
+                                with open(file_path, "wb") as img_f:
+                                    img_f.write(data)
+                    except Exception as err:
+                        print(f"下載附件失敗 {attachment.url}: {err}")
+
+    await ctx.send(f"備份完成！資料已儲存至 `{folder_name}` 資料夾。")
 
 
 def main() -> None:
