@@ -3,7 +3,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 from openai.types.chat import ChatCompletionMessageParam
 from os import getenv, makedirs
-from os.path import exists, join, splitext
+from os.path import dirname, exists, join, splitext
 from typing import Optional
 import aiohttp
 import discord
@@ -153,7 +153,7 @@ async def say(ctx: commands.Context[commands.Bot], message: str) -> None:
 @bot.hybrid_command()
 async def archive_channel(ctx: commands.Context[commands.Bot]) -> None:
     folder_name = join("archive", str(ctx.channel.id))
-    folder_path = join(__file__, folder_name)
+    folder_path = join(dirname(__file__), folder_name)
     makedirs(folder_path, exist_ok=True)
     log_file_path = join(folder_path, "messages.txt")
     await ctx.send("開始讀取頻道歷史訊息並備份...")
