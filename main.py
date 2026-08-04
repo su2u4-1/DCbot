@@ -172,6 +172,7 @@ async def archive_channel(ctx: commands.Context[commands.Bot]) -> None:
 
     semaphore = asyncio.Semaphore(10)
     download_queue: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue()
+    file_set: dict[str, str] = {}  # 用於追蹤已下載的檔案，避免重複下載
 
     async def download_worker() -> None:
         async with aiohttp.ClientSession() as session:
@@ -232,8 +233,11 @@ async def archive_channel(ctx: commands.Context[commands.Bot]) -> None:
         for attachment in attachments:
             safe_filename = get_safe_filename(attachment.filename)
             file_path = join(folder_path, safe_filename)
-            await f.write(f"{indent}[appendix: {safe_filename} (url: {attachment.url})]\n")
-            await download_queue.put((attachment.url, file_path))
+            if attachment.url not in file_set:
+                await f.write(f"{indent}[appendix: {safe_filename} (url: {attachment.url})]\n")
+                await download_queue.put((attachment.url, file_path))
+            else:
+                await f.write(f"{indent}[appendix: {file_set[file_path]} (url: {attachment.url})]\n")
 
         # 2. 處理貼圖 (Stickers)
         for sticker in stickers:
@@ -241,8 +245,11 @@ async def archive_channel(ctx: commands.Context[commands.Bot]) -> None:
             raw_filename = f"sticker_{sticker.name}"
             safe_filename = get_safe_filename(raw_filename)
             file_path = join(folder_path, safe_filename)
-            await f.write(f"{indent}[appendix: {safe_filename} (url: {sticker.url})]\n")
-            await download_queue.put((sticker.url, file_path))
+            if sticker.url not in file_set:
+                await f.write(f"{indent}[appendix: {safe_filename} (url: {sticker.url})]\n")
+                await download_queue.put((sticker.url, file_path))
+            else:
+                await f.write(f"{indent}[appendix: {file_set[file_path]} (url: {sticker.url})]\n")
 
     async with aiofiles.open(log_file_path, "w", encoding="utf-8-sig") as f:
         guild_name = ctx.guild.name if ctx.guild else "DM"
