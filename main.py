@@ -3,7 +3,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 from openai.types.chat import ChatCompletionMessageParam
 from os import getenv, makedirs
-from os.path import join, splitext
+from os.path import exists, join, splitext
 from typing import Optional
 import aiohttp
 import discord
@@ -128,7 +128,7 @@ def get_time() -> str:
 @bot.hybrid_command()
 async def hello(ctx: commands.Context[commands.Bot], user: discord.User | discord.Member | None = None) -> None:
     """Say hello."""
-    print(f"[{get_time()}] use hello by {ctx.author.mention}: {"None" if user is None else user.id}", flush=True)
+    print(f"[{get_time()}] use hello by {ctx.author.mention}: {'None' if user is None else user.id}", flush=True)
     mention = ctx.author.mention if user is None else user.mention
     await ctx.send("Hello " + mention)
 
@@ -152,25 +152,25 @@ async def say(ctx: commands.Context[commands.Bot], message: str) -> None:
 
 @bot.hybrid_command()
 async def archive_channel(ctx: commands.Context[commands.Bot]) -> None:
-    folder_name: str = f"archive_{ctx.channel.id}"
-    media_dir: str = join(folder_name, "media")
-    makedirs(media_dir, exist_ok=True)
-    log_file_path: str = join(folder_name, "messages.txt")
-
+    folder_name = join("archive", str(ctx.channel.id))
+    folder_path = join(__file__, folder_name)
+    makedirs(folder_path, exist_ok=True)
+    log_file_path = join(folder_path, "messages.txt")
     await ctx.send("開始讀取頻道歷史訊息並備份...")
-
     async with aiohttp.ClientSession() as session:
         with open(log_file_path, "w", encoding="utf-8") as f:
+            f.write(f"channel: {ctx.guild.name if ctx.guild else "DM"}/{getattr(ctx.channel, "name", str(ctx.channel.id))} (ID: {ctx.channel.id})\n")
             async for msg in ctx.channel.history(limit=None, oldest_first=True):
                 f.write(f"[{msg.created_at}] {msg.author} ({msg.author.id}): {msg.content}\n")
-
-                for index, attachment in enumerate(msg.attachments):
-                    f.write(f"  [附件] {attachment.filename} ({attachment.url})\n")
-
-                    ext: str = splitext(attachment.filename)[1]
-                    safe_filename: str = f"{msg.id}_{index}{ext}"
-                    file_path: str = join(media_dir, safe_filename)
-
+                for attachment in msg.attachments:
+                    name, ext = splitext(attachment.filename)
+                    index = 0
+                    safe_filename = f"{name}_{index}{ext}"
+                    while exists(join(folder_path, safe_filename)):
+                        index += 1
+                        safe_filename = f"{name}_{index}{ext}"
+                    file_path = join(folder_path, safe_filename)
+                    f.write(f" [appendix: {safe_filename} (url: {attachment.url})]\n")
                     try:
                         async with session.get(attachment.url) as resp:
                             if resp.status == 200:
@@ -179,7 +179,6 @@ async def archive_channel(ctx: commands.Context[commands.Bot]) -> None:
                                     img_f.write(data)
                     except Exception as err:
                         print(f"下載附件失敗 {attachment.url}: {err}")
-
     await ctx.send(f"備份完成！資料已儲存至 `{folder_name}` 資料夾。")
 
 
