@@ -1,19 +1,24 @@
 from datetime import datetime
+from os import getenv, makedirs
+from os.path import dirname, exists, join, splitext
+
+import aiofiles
+import aiohttp
+import asyncio
+import discord
+import openai
 from discord.ext import commands
 from dotenv import load_dotenv
 from openai.types.chat import ChatCompletionMessageParam
-from os import getenv, makedirs
-from os.path import dirname, exists, join, splitext
-from typing import Optional
-import aiohttp
-import discord
-import openai
 
 load_dotenv()
 client_ai = openai.AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=getenv("KEY"))
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+# ============================
 
 
 @bot.event
@@ -53,7 +58,7 @@ async def on_message(message: discord.Message) -> None:
         async with message.channel.typing():
             try:
                 chain: list[discord.Message] = []
-                curr: Optional[discord.Message] = message
+                curr: discord.Message | None = message
 
                 while curr:
                     chain.append(curr)
@@ -118,9 +123,6 @@ async def stop(ctx: commands.Context[commands.Bot]) -> None:
         await bot.close()
 
 
-# ============================
-
-
 def get_time() -> str:
     return datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
@@ -135,51 +137,131 @@ async def hello(ctx: commands.Context[commands.Bot], user: discord.User | discor
 
 @bot.hybrid_command()
 async def time(ctx: commands.Context[commands.Bot]) -> None:
-    print(f"[{get_time()}] use time by {ctx.author.mention}", flush=True)
     """Get the current time."""
+    print(f"[{get_time()}] use time by {ctx.author.mention}", flush=True)
     await ctx.send(f"{get_time()}")
 
 
 @bot.hybrid_command()
 async def say(ctx: commands.Context[commands.Bot], message: str) -> None:
-    print(f"[{get_time()}] use say by {ctx.author.mention}: {message}", flush=True)
     """Echo the message."""
+    print(f"[{get_time()}] use say by {ctx.author.mention}: {message}", flush=True)
     if "阿蘇" in message and "女裝" in message:
         await ctx.send(f"阿蘇不會女裝的，放棄吧\n-# <@{getenv("OWNER_ID")}> 有人亂講話")
     else:
         await ctx.send(message)
 
 
+# ============================
+
+
 @bot.hybrid_command()
 async def archive_channel(ctx: commands.Context[commands.Bot]) -> None:
+    """Archive the current channel's message history and attachments."""
+    print(f"[{get_time()}] use archive_channel by {ctx.author.mention}", flush=True)
+    # 1. 延遲回應：處理大規模資料時間較長，避免 Discord 指令 3 秒逾時失敗
+    await ctx.defer()
+
     folder_name = join("archive", str(ctx.channel.id))
+    if exists(folder_name):
+        folder_name += datetime.now().strftime("_%Y-%m-%d-%H-%M-%S")
     folder_path = join(dirname(__file__), folder_name)
     makedirs(folder_path, exist_ok=True)
     log_file_path = join(folder_path, "messages.txt")
-    await ctx.send("開始讀取頻道歷史訊息並備份...")
-    async with aiohttp.ClientSession() as session:
-        with open(log_file_path, "w", encoding="utf-8") as f:
-            f.write(f"channel: {ctx.guild.name if ctx.guild else "DM"}/{getattr(ctx.channel, "name", str(ctx.channel.id))} (ID: {ctx.channel.id})\n")
-            async for msg in ctx.channel.history(limit=None, oldest_first=True):
-                f.write(f"[{msg.created_at}] {msg.author} ({msg.author.id}): {msg.content}\n")
-                for attachment in msg.attachments:
-                    name, ext = splitext(attachment.filename)
-                    index = 0
+
+    await ctx.send("開始讀取頻道歷史訊息並備份（大規模備份中...）")
+
+    # 限制同時下載圖片的數量（避免封包堵塞或被 CDN 限流）
+    semaphore = asyncio.Semaphore(10)
+
+    # 建立生產者-消費者佇列 (Queue)，避免一次把上萬個 Task 排入 Event Loop 導致記憶體暴增
+    download_queue: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue()
+
+    # 輔助函式：帶有 HTTP 429 / 5xx 重試機制的非同步串流下載器
+    async def download_worker() -> None:
+        async with aiohttp.ClientSession() as session:
+            while True:
+                item = await download_queue.get()
+                if item is None:  # 收到結束信號 (Poison Pill)
+                    download_queue.task_done()
+                    break
+
+                url, target_path = item
+                async with semaphore:
+                    max_retries = 5
+                    for attempt in range(max_retries):
+                        try:
+                            async with session.get(url) as resp:
+                                # 處理 CDN Rate Limit (HTTP 429)
+                                if resp.status == 429:
+                                    retry_after = float(resp.headers.get("Retry-After", 2.0))
+                                    await asyncio.sleep(retry_after)
+                                    continue
+
+                                # 處理伺服器端暫時性錯誤 (HTTP 5xx) -> 指數退避
+                                if resp.status >= 500:
+                                    await asyncio.sleep(2**attempt)
+                                    continue
+
+                                if resp.status == 200:
+                                    async with aiofiles.open(target_path, "wb") as img_f:
+                                        async for chunk in resp.content.iter_chunked(1024 * 1024):  # 1MB
+                                            await img_f.write(chunk)
+                                    break  # 下載成功，跳出重試迴圈
+                        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+                            if attempt == max_retries - 1:
+                                print(f"下載附件失敗 {url}: {err}")
+                            await asyncio.sleep(2**attempt)
+
+                download_queue.task_done()
+
+    # 啟動 10 個背景 Worker 工作線程
+    worker_count = 10
+    workers = [asyncio.create_task(download_worker()) for _ in range(worker_count)]
+
+    # 追蹤已產生的檔名，改用記憶體內 Set 進行 O(1) 檔名碰撞檢測，保護硬碟 I/O
+    used_filenames: set[str] = set()
+
+    # 使用 aiofiles 非同步寫入文字紀錄檔
+    async with aiofiles.open(log_file_path, "w", encoding="utf-8-sig") as f:
+        guild_name = ctx.guild.name if ctx.guild else "DM"
+        channel_name = getattr(ctx.channel, "name", str(ctx.channel.id))
+        await f.write(f"channel: {guild_name}/{channel_name}, id: {ctx.channel.id}, time: {get_time()}\n")
+
+        # 2. 批次讀取歷史訊息
+        async for msg in ctx.channel.history(limit=None, oldest_first=True):
+            await f.write(f"[{msg.created_at}] {msg.author} ({msg.author.id}): {msg.content}\n")
+
+            for attachment in msg.attachments:
+                name, ext = splitext(attachment.filename)
+                index = 0
+                safe_filename = f"{name}_{index}{ext}"
+
+                # 優先檢查記憶體內的 Set，若無才檢查實體硬碟，大幅減少硬碟磁碟 I/O 次數
+                while safe_filename in used_filenames or exists(join(folder_path, safe_filename)):
+                    index += 1
                     safe_filename = f"{name}_{index}{ext}"
-                    while exists(join(folder_path, safe_filename)):
-                        index += 1
-                        safe_filename = f"{name}_{index}{ext}"
-                    file_path = join(folder_path, safe_filename)
-                    f.write(f" [appendix: {safe_filename} (url: {attachment.url})]\n")
-                    try:
-                        async with session.get(attachment.url) as resp:
-                            if resp.status == 200:
-                                data: bytes = await resp.read()
-                                with open(file_path, "wb") as img_f:
-                                    img_f.write(data)
-                    except Exception as err:
-                        print(f"下載附件失敗 {attachment.url}: {err}")
+
+                used_filenames.add(safe_filename)
+                file_path = join(folder_path, safe_filename)
+                await f.write(f" [appendix: {safe_filename} (url: {attachment.url})]\n")
+
+                # 將下載任務放入佇列，讓背景 Worker 處理
+                await download_queue.put((attachment.url, file_path))
+
+    # 等待佇列中的所有圖片下載任務完成
+    await download_queue.join()
+
+    # 發送 Poison Pill 關閉所有背景 Worker
+    for _ in range(worker_count):
+        await download_queue.put(None)
+    await asyncio.gather(*workers)
+
+    # 傳送完成訊息
     await ctx.send(f"備份完成！資料已儲存至 `{folder_name}` 資料夾。")
+
+
+# ============================
 
 
 def main() -> None:
