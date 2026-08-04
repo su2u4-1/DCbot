@@ -2,3 +2,5 @@
 *.env
 venv/
 bot.log
+archive/
+log/
