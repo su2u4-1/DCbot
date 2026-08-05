@@ -272,15 +272,12 @@ async def archive_channel(ctx: commands.Context[commands.Bot]) -> None:
                     # 判斷是否包含文字內容
                     has_content = bool(snap_content and snap_content.strip())
 
+                    await f.write(f"[{msg.created_at}] {msg.author} ({msg.author.id}):" " {\n")
+                    # 內容
                     if has_content:
-                        # 格式: 內容換行並縮排，使用轉發者 (msg.author) 與轉發時間 (msg.created_at)
                         indented_content = "\n".join(f"    {line}" for line in snap_content.splitlines())
-                        await f.write(f"[{msg.created_at}] {msg.author} ({msg.author.id}):" " {\n" f"{indented_content}\n")
-                    else:
-                        # 格式: 只有附件時顯示空的 {}
-                        await f.write(f"[{msg.created_at}] {msg.author} ({msg.author.id}):" " {\n")
-
-                    # 處理轉發訊息內部的附件
+                        await f.write(indented_content + "\n")
+                    # 附件
                     await process_attachments_and_stickers(snap_attachments, [], indent="     ^ ")
                     await f.write("}\n")
 
