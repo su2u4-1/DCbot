@@ -261,7 +261,7 @@ async def archive_channel(ctx: commands.Context[commands.Bot]) -> None:
             await f.write(f"[{msg.created_at}] {msg.author} ({msg.author.id}): {msg.content}\n")
 
             # 處理主訊息的附件與貼圖
-            await process_attachments_and_stickers(msg.attachments, msg.stickers, indent="    ")
+            await process_attachments_and_stickers(msg.attachments, msg.stickers, indent=" ^ ")
 
             # 3. 處理轉發訊息 (Message Snapshots)
             if hasattr(msg, "message_snapshots") and msg.message_snapshots:
@@ -275,13 +275,14 @@ async def archive_channel(ctx: commands.Context[commands.Bot]) -> None:
                     if has_content:
                         # 格式: 內容換行並縮排，使用轉發者 (msg.author) 與轉發時間 (msg.created_at)
                         indented_content = "\n".join(f"    {line}" for line in snap_content.splitlines())
-                        await f.write(f"[{msg.created_at}] {msg.author} ({msg.author.id}): {{\n" f"{indented_content}\n" f"}}\n")
+                        await f.write(f"[{msg.created_at}] {msg.author} ({msg.author.id}):" " {\n" f"{indented_content}\n")
                     else:
                         # 格式: 只有附件時顯示空的 {}
-                        await f.write(f"[{msg.created_at}] {msg.author} ({msg.author.id}): {{}}\n")
+                        await f.write(f"[{msg.created_at}] {msg.author} ({msg.author.id}):" " {\n")
 
                     # 處理轉發訊息內部的附件
-                    await process_attachments_and_stickers(snap_attachments, [], indent="    ")
+                    await process_attachments_and_stickers(snap_attachments, [], indent="     ^ ")
+                    await f.write("}\n")
 
     await download_queue.join()
 
