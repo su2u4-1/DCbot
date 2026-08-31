@@ -85,6 +85,9 @@ async def on_message(message: discord.Message) -> None:
                 if not ai_reply:
                     raise ValueError("OpenRouter returned an empty reply")
 
+                if "女裝" in ai_reply:
+                    ai_reply = "⚠️ 禁止女裝！"
+
                 print(f"[{get_time()}] AI: {ai_reply}", flush=True)
 
                 await message.reply(ai_reply)
