@@ -1,5 +1,5 @@
 @echo off
-set REMOTE=su2u4@192.168.0.97
+set REMOTE=su2u4@192.168.0.106
 set REMOTE_SCRIPT=/home/su2u4/bot.sh
 
 if "%1"=="" (
